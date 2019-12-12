@@ -1,0 +1,164 @@
+import os
+import argparse
+import chainer
+import cv2
+from chainer import Variable
+import chainer.functions as F
+
+from chainercv.datasets import VOCSemanticSegmentationDataset
+from chainer.iterators import SerialIterator
+from chainer.serializers import load_npz
+from chainer.backends.cuda import get_array_module
+
+from matplotlib import pyplot as plt
+import numpy as np
+import cupy as cp
+from PIL import Image
+
+from models.fcn8 import FCN8s
+from models.fcn8_hand_v2 import FCN8s_hand
+from my_training_dataset import MyTrainingDataset
+from postprocessing import gcams_to_mask
+
+def show_multi_gcam(model, image, dataset):
+    gcams, cl_scores, class_ids = model.stream_cl_multi(image)
+    cv2.imshow("mask", gcams_to_mask(image, gcams, class_ids, dataset))
+    # cv2.waitKey()
+    for i in range(len(gcams)):
+        # gcam for class i
+        gcams[i] = cp.asnumpy(F.squeeze(gcams[i][0], 0).data)
+
+    image_np = cp.asnumpy(F.transpose(F.squeeze(image, 0), (1, 2, 0)).data) / 255.
+    image_np = np.uint8(image_np)
+    image_pil = Image.fromarray(image_np)
+    fig1 = plt.figure()
+    ax2 = plt.subplot()
+    ax2.axis('off')
+
+    alpha_init = 1 / (len(class_ids) + 1)
+    ax2.imshow(cp.asnumpy(F.transpose(F.squeeze(image, 0), (1, 2, 0)).data) / 255.)
+    for i in range(len(gcams)):
+        # so earlier indices will have brighter heatmaps
+        ax2.imshow(gcams[i], cmap='jet', alpha=(1 - alpha_init*(i+1)) / 2)
+        # gcam_np = gcams[i]
+        # gcam_np[..., 0] = np.int8(gcam_np[..., 0] * 255)
+        # print("Max gcam magnitude: " + str(np.max(gcams[i])))
+        # print("Min gcam magnitude: " + str(np.min(gcams[i])))
+    title = ""
+    for class_id in class_ids:
+        class_id = int(class_id[0] + 1)
+        title += dataset.class_names[class_id] + " "
+    ax2.set_title("Present objs: " + title, color='teal')
+    plt.show()
+    input()
+    # gcam_pil = Image.fromarray(gcams[i]).resize(image_pil.size)
+    # image_with_attention = Image.blend(image_pil.convert('RGB'), gcam_pil.convert('RGB'), 0.5)
+    # cv2.imshow("GCAM for Class id: {}".format(class_ids[i]), np.array(image_with_attention))
+    # cv2.waitKey(0)
+
+def main():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--pretrained', type=str,
+                        help='path to model that has trained classifier but has not been trained through GAIN routine')
+    parser.add_argument('--trained', type=str, help='path to model trained through GAIN')
+    parser.add_argument('--device', type=int, default=-1, help='gpu id')
+    parser.add_argument('--shuffle', type=bool, default=False, help='whether to shuffle dataset')
+    parser.add_argument('--whole', type=bool, default=False, help='whether to test for the whole validation dataset')
+    parser.add_argument('--no', type=int, default=20, help='if not whole, then no of images to visualize')
+    parser.add_argument('--name', type=str, default='viz1',
+                        help='name of the subfolder or experiment under which to save')
+
+    args = parser.parse_args()
+
+    pretrained_file = args.pretrained
+    trained_file = args.trained
+    device = args.device
+    shuffle = args.shuffle
+    whole = args.whole
+    name = args.name
+    N = args.no
+
+    dataset = MyTrainingDataset(split='val')
+    iterator = SerialIterator(dataset, 1, shuffle=shuffle, repeat=False)
+    converter = chainer.dataset.concat_examples
+    os.makedirs('viz/' + name, exist_ok=True)
+    # no_of_classes = 20
+    no_of_classes = 21
+    # FCN8s()
+    pretrained = FCN8s_hand()
+    trained = FCN8s_hand()
+    load_npz(pretrained_file, pretrained)
+    trained = pretrained
+    # load_npz(trained_file, trained)
+
+    if device >= 0:
+        pretrained.to_gpu()
+        trained.to_gpu()
+    i = 0
+
+    while not iterator.is_new_epoch:
+
+        if not whole and i >= N:
+            break
+
+        # image, labels = converter(iterator.next()
+        image, labels, metadata = converter(iterator.next())
+        image = Variable(image)
+        if device >= 0:
+            image.to_gpu()
+
+        xp = get_array_module(image.data)
+        to_substract = np.array((-1, 0))
+        noise_classes = np.unique(labels[0]).astype(np.int32)
+        target = xp.asarray([[0] * (no_of_classes)])
+        gt_labels = np.setdiff1d(noise_classes, to_substract) - 1
+
+        show_multi_gcam(trained, image, dataset)
+
+        gcam1, cl_scores1, class_id1 = pretrained.stream_cl(image)
+        # print("Scores 1: " + str(cl_scores1))
+        # print("argmax {}, id {}".format(F.argmax(cl_scores1).data, class_id1))
+        print(cl_scores1[0].data)
+        print(pretrained.classify(image, is_training=False).data)
+        print(gt_labels)
+        class_id1 = [class_id1]
+        gcam2, cl_scores2, class_id2 = trained.stream_cl(image)
+        # print("Scores 2: " + str(cl_scores2))
+
+        if device > -0:
+            class_id = cp.asnumpy(class_id)
+        fig1 = plt.figure(figsize=(20, 10))
+        ax1 = plt.subplot2grid((3, 9), (0, 0), colspan=3, rowspan=3)
+        ax1.axis('off')
+        ax1.imshow(cp.asnumpy(F.transpose(F.squeeze(image, 0), (1, 2, 0)).data) / 255.)
+
+        ax2 = plt.subplot2grid((3, 9), (0, 3), colspan=3, rowspan=3)
+        ax2.axis('off')
+        ax2.imshow(cp.asnumpy(F.transpose(F.squeeze(image, 0), (1, 2, 0)).data) / 255.)
+        ax2.imshow(cp.asnumpy(F.squeeze(gcam1[0], 0).data), cmap='jet', alpha=.5)
+        # print("Mask dims {}".format(cp.asnumpy(lbl1[0].data).shape))
+        # print("Non zero mask pixels {}".format(np.max(cp.asnumpy(lbl1[0].data))))
+        # ax2.set_title("For class - "+str(dataset.class_names[cp.asnumpy(class_id1[0])+1]), color='teal')
+        index = int(F.argmax(cl_scores1[0]).data + 1)
+        present_objs = ""
+        for j in np.argwhere(cp.asnumpy(cl_scores1[0].data) > 0.55):
+            present_objs += dataset.class_names[int(j) + 1] + ", "
+        ax2.set_title("For class - "+present_objs, color='teal')
+
+        ax3 = plt.subplot2grid((3, 9), (0, 6), colspan=3, rowspan=3)
+        ax3.axis('off')
+        ax3.imshow(cp.asnumpy(F.transpose(F.squeeze(image, 0), (1, 2, 0)).data) / 255.)
+        ax3.imshow(cp.asnumpy(F.squeeze(gcam2[0], 0).data), cmap='jet', alpha=.5)
+        # ax3.set_title("For class - "+str(dataset.class_names[cp.asnumpy(class_id2[0])+1]), color='teal')
+        index = int(F.argmax(cl_scores2[0]).data + 1)
+        ax3.set_title("For class - " + str(dataset.class_names[index] + "max gcam {}".format(F.max(gcam2.data))), color='teal')
+        fig1.savefig('viz/' + name + '/' + str(i) + '.png')
+        plt.close()
+        print(i)
+        i += 1
+
+
+if __name__ == "__main__":
+    main()
