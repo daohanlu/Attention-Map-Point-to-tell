@@ -6,5 +6,4 @@ crop_hands.py crops hands from a video by color masking and saves them to a fold
 as pngs with metadata such as the location of the fingertip.
 gt_transfer reads the VOC SBD dataset and overlays the png images of hands on top of objects of a class of interest. 
 
-Machine Learning code based on code by github user @alokwhitewolf.
-Machine Learning model inspired by [Tell Me Where to Look: Guided Attention Inference Network](https://arxiv.org/abs/1802.10171)
+Machine Learning code based on code by github user @alokwhitewolf and inspired by [Tell Me Where to Look: Guided Attention Inference Network](https://arxiv.org/abs/1802.10171)
