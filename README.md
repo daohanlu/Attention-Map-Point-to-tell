@@ -7,3 +7,4 @@ as pngs with metadata such as the location of the fingertip.
 gt_transfer reads the VOC SBD dataset and overlays the png images of hands on top of objects of a class of interest. 
 
 CNN code based on code by github user @alokwhitewolf.
+Idea inspired by paper [Tell Me Where to Look: Guided Attention Inference Network](https://arxiv.org/abs/1802.10171)
