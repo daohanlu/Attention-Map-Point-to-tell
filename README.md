@@ -1,4 +1,4 @@
-# Weakly-Supervised-Point-to-tell
+# Weakly Supervised Point to tell
 An object detection system that detects the category and location of an object that is being pointed at by a (blind) user's hand, based on the attention map calculated from a image-classification neural network (hence weak supervision, since training images only need a categorical label).
 
 Summary Paper is in *summary paper.pdf*  
