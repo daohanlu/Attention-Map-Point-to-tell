@@ -1,8 +1,8 @@
-# Attention-Map-Point-to-tell
-An object detection system that detects the category and location of an object that is being pointed at by the user's hand, based on the attention map calculated from a image-classification neural network.
+# Weakly-Supervised-Point-to-tell
+An object detection system that detects the category and location of an object that is being pointed at by a (blind) user's hand, based on the attention map calculated from a image-classification neural network (hence weak supervision, since training images only need a categorical label).
 
 Summary Paper is in *summary paper.pdf*  
-This work is inspired by [Point-to-Tell-and-Touch](https://ieeexplore.ieee.org/document/8967647)
+This work is built upon [Point-to-Tell-and-Touch](https://ieeexplore.ieee.org/document/8967647)
 
 Main programs are under cnn/Guided-Attention-Inference-Network.
 *crop_hands.py* crops hands from a video by color masking and saves them to a folder
